@@ -2,6 +2,8 @@
 
 Credit risk analysis and strategy built on the LendingClub loan dataset.
 
+**[Read the full business report](https://claude.ai/artifact/AHNNSnJkcNLyyvvoyozjZL)** — scorecard performance, approval-cutoff strategy, risk-based pricing, and loan-amount guidance, written up for a non-technical audience.
+
 ## Data
 
 Dataset is pulled from Kaggle via `kagglehub` (see `download_data.py`):
