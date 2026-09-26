@@ -42,12 +42,15 @@ wordsforthewise/lending-club
 
 - **v2 also rebuilt on Individual applications only, dropping Joint App loans.** A joint application combines two people's finances — `annual_inc`/`dti` mean something structurally different for a joint applicant than an individual one, and LendingClub even provides separate `annual_inc_joint`/`dti_joint` fields for that population — so modeling both together with one feature set risks blurring what those fields represent. Excluding the 120,710 Joint App loans (~5.3% of the dataset) made almost no difference to performance: out-of-time test Gini actually nudged up slightly, from 0.3578 (v1 features + `loan_to_income`, all applications) to 0.3588 (same features, Individual-only). That's the expected result for a small, cleanly-separable segment — it confirms the segmentation is conceptually correct without costing anything in raw performance. Joint App loans would be a reasonable candidate for their own separate scorecard using the joint-specific fields, but that's out of scope here.
 
-- **Fields ruled out for vintage-driven missingness (not real risk signal).** LendingClub added a large block of bureau "trended" fields partway through its history, so several look useful but are actually just a proxy for "how recent is this loan" once you check missingness by issue year — a real risk signal shouldn't be near-100% missing before some year and then ~0% after. Checked and excluded so far:
+- **Vintage-driven missingness: several bureau "trended" fields are really just a proxy for loan recency.** LendingClub added a large block of these fields partway through its history — a real risk signal shouldn't be near-100% missing before some year and then ~0% after.
 
-  | Field | Missing 2007–2011 | Missing 2012 | Missing 2013+ |
-  |---|---|---|---|
-  | `total_rev_hi_lim`, `num_rev_accts`, `num_il_tl` | 100% | 52% | 0% |
-  | `mo_sin_old_il_acct` | 100% | 54% | ~3% (legitimate — no installment accounts) |
-  | `open_act_il` | 100% (through 2014) | — | 94.9% in 2015, 0% from 2016 |
+  | Field | Missing 2007–2011 | Missing 2012 | Missing 2013+ | Status |
+  |---|---|---|---|---|
+  | `total_rev_hi_lim`, `num_rev_accts`, `num_il_tl` | 100% | 52% | 0% | Excluded on theory (not tested) |
+  | `open_act_il` | 100% (through 2014) | — | 94.9% in 2015, 0% from 2016 | Excluded — would be entirely absent in train, fully present in test |
+  | `il_util` | 100% (through 2014) | — | 95.6% in 2015, 13–16% in 2016–2018 | Excluded — essentially no real training data even after 2013 |
+  | `bc_util` | 100% | 15% | ~1% | **Tested** (see above) — clears IV but adds no lift |
+  | `mo_sin_old_il_acct` | 100% | 54% | ~3% | **Tested anyway** — see below |
+  | `num_sats` | 100% | 30% | 0% | **Tested anyway** — see below |
 
-  `bc_util` has the same *type* of pattern but was judged usable given far better coverage (100% missing 2007–2011, only 15% missing 2012, ~1% missing 2013+) — it was tested and, separately, found not to help (see above). `open_act_il` is the worst of these: fully missing through 2015, meaning it'd be entirely absent for the 2007–2015 training window and fully present in the 2016 test set — unusable under the current out-of-time design regardless of any bureau-coverage argument.
+  `mo_sin_old_il_acct` and `num_sats` were tested despite the caveat, on the theory that a real signal might still be worth the vintage noise. Both failed the IV bar regardless (0.008 and 0.012, both well under 0.02), so the question was moot in practice — but the underlying vintage-sanity check is worth recording: each field's "Missing" bin (i.e. pre-2013 loans) showed a *lower* bad rate than the population overall (16.18% and 14.80% vs. 18.42%), plausible either as a real vintage/economic-cycle effect or as the missingness artifact itself. Two related candidates were also tested and found to carry essentially zero signal for a different reason — extreme sparsity, not vintage: `delinq_to_loan` (`delinq_amnt` / `loan_amnt`, IV ≈ 0.000000, only 0.32% of loans have any current delinquent amount) and `chargeoff_within_12_mths` (IV ≈ 0.000018, ~0.76% nonzero).
