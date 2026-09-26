@@ -14,7 +14,7 @@ wordsforthewise/lending-club
 
 - `notebooks/eda.ipynb` — exploratory analysis of loan volume, default rates by grade/term/purpose, and key risk drivers.
 - `notebooks/scorecard.ipynb` — WOE/logistic-regression credit scorecard (v1) with out-of-time validation.
-- `notebooks/scorecard_adv.ipynb` — scorecard v2: expanded feature set (adds `loan_to_income`, credit history length, delinquency recency, geography) on top of v1's methodology.
+- `notebooks/scorecard_adv.ipynb` — scorecard v2: Individual-applications-only, 22 selected features after a full systematic sweep of every LendingClub bureau field (see below).
 - `notebooks/cutoff_strategy.ipynb` — turns the scorecard into an approval-cutoff policy: realized-profit curves, a bad-capture gains chart, and a swap-set table.
 
 ## Scorecard design decisions
@@ -58,3 +58,64 @@ wordsforthewise/lending-club
 - **Major finding: a milder-vintage-tier batch of bankcard/inquiry-recency fields produced the biggest single improvement in this project.** Systematically swept ~35 remaining bureau fields and classified each by missingness-by-year into unusable (100% missing through 2014–2015, e.g. `open_acc_6m`, `open_il_12m/24m`, `total_bal_il`, `all_util`, `inq_fi`, `total_cu_tl`, `inq_last_12m`), severe-vintage (100%/52%/~0% pattern, same tier as `mo_sin_old_il_acct`/`num_sats` above — includes `pct_tl_nvr_dlq`, `num_actv_bc_tl`, `num_bc_tl`, `tot_hi_cred_lim`, and ~10 others), and mild-vintage (100%/~15%/~1%, same tier as `bc_util`). Tested the 7 mild-vintage candidates: `acc_open_past_24mths`, `bc_open_to_buy`, `mths_since_recent_bc`, `percent_bc_gt_75`, `total_bal_ex_mort`, `total_bc_limit`, `mths_since_recent_inq`.
 
   **6 of 7 cleared the IV bar** (`total_bal_ex_mort` at IV=0.007 was the only miss), led by `acc_open_past_24mths` (accounts opened in the past 24 months, IV=0.083 — the single strongest new predictor added this session). Out-of-time test Gini jumped from 0.3588 to **0.3847** — a ~7.2% relative gain, roughly 5x bigger than the `loan_to_income` improvement. As a bonus, adding these bankcard-detail fields finally resolved `revol_util`'s chronic sign instability (coefficient is now correctly negative at -0.031, for the first time in this project) — the extra fields apparently absorbed whatever collinear signal was confusing it. `loan_amnt` remains positive (worse than before, +0.252) and `percent_bc_gt_75` is now barely positive too (+0.032) — both flagged, neither large.
+
+- **The remaining severe-vintage-tier fields were tested to complete the sweep — 6 more cleared IV, contradicting the earlier "this whole tier is a dead end" read.** `mo_sin_old_il_acct`/`num_sats` had both failed IV, which suggested the entire 52%-missing-in-2012 tier wasn't worth pursuing. Testing the other 13 fields in that tier disproved that: `num_tl_op_past_12m` (IV=0.058), `mo_sin_rcnt_tl` (0.043), `tot_hi_cred_lim` (0.040), `mo_sin_rcnt_rev_tl_op` (0.033), `num_actv_rev_tl` (0.032), and `num_rev_tl_bal_gt_0` (0.031) all cleared the bar and were selected. Out-of-time test Gini rose further to **0.3867**. All 13 fields in this tier share the *identical* Missing-bin population (same ~67,527 loans, since LendingClub added them together in one data-collection wave) with a consistent bad rate of 15.28% vs. 18.42% overall (WOE=0.225) — a real, moderate signal, plausibly a vintage/economic-cycle effect, that turned out not to disqualify the fields that carried genuine additional information on top of it. New sign issue: `mo_sin_rcnt_rev_tl_op` came in positive (+0.372), likely collinear with the very similar `mo_sin_rcnt_tl`. Two very sparse recency fields (`mths_since_recent_bc_dlq`, `mths_since_recent_revol_delinq`) were also tested and rejected (IV=0.0021 and 0.0015) — same profile as the other derogatory-recency fields already ruled out.
+
+- **This completes the systematic sweep — full field-by-field results:**
+
+  | Field | IV | Verdict |
+  |---|---|---|
+  | `term_months` | 0.240 | ✅ Selected (v1) |
+  | `loan_to_income` | 0.125 | ✅ Selected |
+  | `fico_percentile` | 0.110 | ✅ Selected (v1) |
+  | `acc_open_past_24mths` | 0.083 | ✅ Selected |
+  | `dti` | 0.075 | ✅ Selected (v1) |
+  | `num_tl_op_past_12m` | 0.058 | ✅ Selected |
+  | `bc_open_to_buy` | 0.055 | ✅ Selected |
+  | `verification_status` | 0.051 | ✅ Selected (v1) |
+  | `mo_sin_rcnt_tl` | 0.043 | ✅ Selected |
+  | `total_bc_limit` | 0.041 | ✅ Selected |
+  | `tot_hi_cred_lim` | 0.040 | ✅ Selected |
+  | `mths_since_recent_inq` | 0.040 | ✅ Selected |
+  | `loan_amnt` | 0.037 | ✅ Selected (v1) — sign flipped, +0.289 |
+  | `mo_sin_rcnt_rev_tl_op` | 0.033 | ✅ Selected — sign flipped, +0.372 |
+  | `percent_bc_gt_75` | 0.033 | ✅ Selected — sign flipped, +0.034 |
+  | `num_actv_rev_tl` | 0.032 | ✅ Selected |
+  | `num_rev_tl_bal_gt_0` | 0.031 | ✅ Selected |
+  | `annual_inc` | 0.031 | ✅ Selected (v1) |
+  | `mths_since_recent_bc` | 0.029 | ✅ Selected |
+  | `mort_acc` | 0.027 | ✅ Selected (v1) |
+  | `revol_util` | 0.022 | ✅ Selected (v1) — sign now correct (-0.059) |
+  | `home_ownership` | 0.021 | ✅ Selected (v1) |
+  | `purpose` | 0.020 | Tested, below bar |
+  | `inq_last_6mths` | 0.018 | Tested, below bar |
+  | `num_op_rev_tl` | 0.014 | Tested, below bar |
+  | `num_sats` | 0.012 | Tested, below bar |
+  | `num_actv_bc_tl` | 0.012 | Tested, below bar |
+  | `mo_sin_old_il_acct` | 0.008 | Tested, below bar |
+  | `open_acc` | 0.008 | Tested, below bar |
+  | `total_bal_ex_mort` | 0.007 | Tested, below bar |
+  | `emp_length_years` | 0.006 | Tested, below bar |
+  | `total_il_high_credit_limit` | 0.006 | Tested, below bar |
+  | `num_bc_sats` | 0.006 | Tested, below bar |
+  | `num_bc_tl` | 0.005 | Tested, below bar |
+  | `pct_tl_nvr_dlq` | 0.005 | Tested, below bar |
+  | `num_accts_ever_120_pd` | 0.005 | Tested, below bar |
+  | `num_tl_30dpd` | 0.004 | Tested, below bar |
+  | `revol_bal` | 0.003 | Tested, below bar |
+  | `mths_since_recent_bc_dlq` | 0.002 | Tested, below bar |
+  | `mths_since_recent_revol_delinq` | 0.002 | Tested, below bar |
+  | `delinq_2yrs` | 0.001 | Tested, below bar |
+  | `num_tl_120dpd_2m` | 0.001 | Tested, below bar |
+  | `pub_rec`, `pub_rec_bankruptcies`, `tax_liens` | ~0.001 | Tested, below bar |
+  | `total_acc` | 0.0004 | Tested, below bar |
+  | `chargeoff_within_12_mths` | 0.00002 | Tested, below bar (~0.76% nonzero) |
+  | `delinq_to_loan` | ~0.000000 | Tested, below bar (~0.32% nonzero) |
+  | `bc_util` | 0.029 (IV clears, no lift) | Tested and dropped — see above |
+  | `addr_state`, `credit_history_years`, `acc_now_delinq` | — | Tested (earlier round), below bar |
+  | `total_rev_hi_lim`, `num_rev_accts`, `num_il_tl`, `mo_sin_old_rev_tl_op`, `num_tl_90g_dpd_24m`, `avg_cur_bal` | — | Excluded on missingness theory, not individually tested (same family as the tested severe-tier fields) |
+  | `open_act_il`, `il_util`, `open_acc_6m`, `open_il_12m/24m`, `open_rv_12m/24m`, `total_bal_il`, `all_util`, `inq_fi`, `total_cu_tl`, `inq_last_12m`, `mths_since_rcnt_il` | — | Unusable — 100% missing through 2014–2015 |
+  | `grade`, `sub_grade`, `int_rate`, `installment` | — | Excluded from the start — LendingClub's own risk decision (leakage) |
+  | `total_pymnt`, `recoveries`, `hardship_*`, `settlement_*`, etc. | — | Excluded — post-origination outcome fields (leakage) |
+
+  **Nothing meaningful remains untested.** Final model: 22 selected features, out-of-time test Gini = **0.3867** (AUC 0.6934, KS 0.2771) — up from 0.3527 for the original v1 baseline, a ~9.6% relative improvement across the whole feature-engineering process.
