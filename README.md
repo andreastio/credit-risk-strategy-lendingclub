@@ -16,6 +16,7 @@ wordsforthewise/lending-club
 - `notebooks/scorecard.ipynb` — WOE/logistic-regression credit scorecard (v1) with out-of-time validation.
 - `notebooks/scorecard_adv.ipynb` — scorecard v2: Individual-applications-only, 22 selected features after a full systematic sweep of every LendingClub bureau field (see below).
 - `notebooks/cutoff_strategy.ipynb` — turns the scorecard into an approval-cutoff policy: realized-profit curves, a bad-capture gains chart, and a swap-set table.
+- `notebooks/scorecard_final.ipynb` — the production-locked 22-feature scorecard plus three business applications: approval cutoffs, risk-based pricing (within-grade repricing opportunity), and loan-amount/exposure guidance by risk tier.
 
 ## Scorecard design decisions
 
