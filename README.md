@@ -15,10 +15,7 @@ wordsforthewise/lending-club
 ## Notebooks
 
 - `notebooks/eda.ipynb` — exploratory analysis of loan volume, default rates by grade/term/purpose, and key risk drivers.
-- `notebooks/scorecard.ipynb` — WOE/logistic-regression credit scorecard (v1) with out-of-time validation.
-- `notebooks/scorecard_adv.ipynb` — scorecard v2: Individual-applications-only, 22 selected features after a full systematic sweep of every LendingClub bureau field (see below).
-- `notebooks/cutoff_strategy.ipynb` — turns the scorecard into an approval-cutoff policy: realized-profit curves, a bad-capture gains chart, and a swap-set table.
-- `notebooks/scorecard_final.ipynb` — the production-locked 22-feature scorecard plus three business applications: approval cutoffs, risk-based pricing (within-grade repricing opportunity), and loan-amount/exposure guidance by risk tier.
+- `notebooks/scorecard.ipynb` — the final WOE/logistic-regression credit scorecard (22 features, out-of-time validated, Individual applications only), plus three business applications built on it: approval-cutoff strategy, risk-based pricing, and loan-amount/exposure guidance.
 
 ## Scorecard design decisions
 
@@ -110,3 +107,11 @@ Everything above was built without `grade`, `sub_grade`, or `int_rate` as model 
 | **Our scorecard** | **0.6934** | **0.3867** | 0.2771 |
 
 **Our scorecard actually beats all three of LendingClub's own risk measures** on this population, including `int_rate` — LC's finest-grained, continuous pricing signal, which presumably bakes in whatever non-bureau data and manual-underwriting judgment they had access to. This is a strong result for a model built entirely from public application/bureau data: the systematic feature sweep above (particularly the bankcard-detail and account-recency fields) recovered signal that's at least as good as LendingClub's own proprietary assessment, on this out-of-time slice. (Caveat: this is one test window — 2016 vintage only — not a claim that this holds across all periods or economic conditions.)
+
+## Business applications (see `notebooks/scorecard.ipynb`, sections 8–10)
+
+- **Approval cutoffs.** Accepting every 2016 applicant would have realized a **$71.5M loss** (real historical cash flow). A score-based cutoff (score ≥ 534.3, 52.7% approval rate, 13.9% bad rate among approved) turns that into a **+$65.8M profit** — a **$137.3M swing**, achieved purely by applying the scorecard to the accept/decline line LendingClub already draws.
+- **Risk-based pricing.** Splitting each LendingClub grade into thirds by our score reveals default-rate gaps of up to 20 points that LC's actual rate charged barely reflects — e.g. within grade C, the worst third defaults at 34.1% vs. 19.1% for the best third, while the rate charged differs by well under half a point. The worst third of grades C–G is a **net loss** historically, even at rates up to 28.9%.
+- **Loan-amount / exposure guidance.** Loan size amplifies whatever the score predicts: for the worst-scoring fifth of applicants, losses grow from -$858/loan (small) to -$3,358/loan (large); for the best-scoring fifth, profit grows from +$257/loan to +$1,186/loan. Exposure limits should scale with score, not just the approve/decline line.
+
+Full detail, caveats, and recommendations are in the [business report](https://claude.ai/artifact/AHNNSnJkcNLyyvvoyozjZL) linked at the top.
