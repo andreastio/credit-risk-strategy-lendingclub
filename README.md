@@ -17,6 +17,7 @@ wordsforthewise/lending-club
 - `notebooks/eda.ipynb` — exploratory analysis of loan volume, default rates by grade/term/purpose, and key risk drivers.
 - `notebooks/scorecard.ipynb` — the final WOE/logistic-regression credit scorecard (22 features, out-of-time validated, Individual applications only), plus three business applications built on it: approval-cutoff strategy, risk-based pricing, and loan-amount/exposure guidance.
 - `notebooks/challenger_lightgbm.ipynb` — an explainable LightGBM challenger to the scorecard: monotonic constraints, walk-forward comparison, swap-set analysis, SHAP explanations, adverse-action reason codes, and PSI monitoring. (On macOS, LightGBM needs `brew install libomp`.)
+- `notebooks/macro_early_warning.ipynb`: tests whether macro/sentiment data (FRED) or the lender's own early-vintage performance would have caught the 2016–2017 deterioration, for PD calibration and cutoff strategy.
 
 ## Scorecard design decisions
 
@@ -128,6 +129,26 @@ The standard next question for any production scorecard: does a gradient-boosted
 - **Cost of explainability:** monotonic constraints cost 0.008–0.016 Gini vs. an unconstrained LightGBM, which is a small price for guaranteed, defensible feature behaviour.
 - **SHAP + reason codes:** TreeSHAP contributions sum exactly to the model's log-odds; each declined applicant gets three plain-language adverse-action reasons (e.g. "Loan amount is high relative to income").
 - **Monitoring, and what PSI misses:** score PSI stays below 0.02 every year, a fully "stable" population, yet the default rate jumped from 18.4% to 23.3%. PSI tracks *who applies*, not *how they perform*, so outcome-based monitoring (early delinquency, predicted vs. actual PD) has to sit alongside it. `loan_to_income` PSI is trending up (0.014 → 0.088) and is the first input heading for the 0.10 watch threshold.
+
+## Leading indicators: macro data vs. early-warning signals (`notebooks/macro_early_warning.ipynb`)
+
+The walk-forward backtest showed that backward-looking cutoffs kept losing money as 2016–2017 deteriorated, and concluded that production use needs leading indicators. This notebook tests two candidates on a consistent **12-month default** measure, which counts every loan and avoids the right-censoring in the resolved-only rate (2016 looks like 23% resolved-only, and is 3.3% on a 12-month basis):
+
+- **Macro & sentiment (FRED):** state unemployment matched on `addr_state`, University of Michigan consumer sentiment, St. Louis Fed financial stress, and bank consumer-loan delinquency, each lagged by its publication delay.
+- **Early warning:** how fast recently issued loans stop paying, relative to what the model expected for their mix. A first-payment-default read is available about 3 months after issue.
+
+**Macro data would not have helped.** Defaults rose while the economy improved: the quarterly default rate correlates −0.55 with unemployment and +0.49 with sentiment, the opposite of what macro forecasting assumes. Adding macro features changed out-of-time Gini by less than ±0.003 and made the level drift slightly worse.
+
+**The early-warning signal would have.** It passed 1.5× expected by 2016Q3, and cut the 2017 PD calibration error from −33% to −1%.
+
+| Cutoff policy (2015–2017) | Approval | Approved 12-month default |
+|---|---|---|
+| Static | 71.7% | 2.08% |
+| Macro-aware | 73.3% | 2.13% |
+| **Early-warning, tighten-only** | 56.0% | **1.74%** (−35% defaults approved) |
+| Hindsight static at the same approval | 56.0% | 1.72% |
+
+The trigger doesn't find better borrowers. It tells you how much to tighten, and when, without hindsight. For IFRS 9 this argues for putting early-vintage monitoring alongside macro scenario overlays, since the macro overlays miss lender- and segment-specific shifts such as LendingClub's 2016 funding crisis. Caveats: `bad12` is reconstructed from an end-of-data snapshot, the approval-volume trade-off isn't priced, and 2009–2017 contains no recession.
 
 ## Business applications (see `notebooks/scorecard.ipynb`, sections 8–10)
 
