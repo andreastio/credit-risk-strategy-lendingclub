@@ -16,6 +16,7 @@ wordsforthewise/lending-club
 
 - `notebooks/eda.ipynb` — exploratory analysis of loan volume, default rates by grade/term/purpose, and key risk drivers.
 - `notebooks/scorecard.ipynb` — the final WOE/logistic-regression credit scorecard (22 features, out-of-time validated, Individual applications only), plus three business applications built on it: approval-cutoff strategy, risk-based pricing, and loan-amount/exposure guidance.
+- `notebooks/challenger_lightgbm.ipynb` — an explainable LightGBM challenger to the scorecard: monotonic constraints, walk-forward comparison, swap-set analysis, SHAP explanations, adverse-action reason codes, and PSI monitoring. (On macOS, LightGBM needs `brew install libomp`.)
 
 ## Scorecard design decisions
 
@@ -107,6 +108,26 @@ Everything above was built without `grade`, `sub_grade`, or `int_rate` as model 
 | **Our scorecard** | **0.6934** | **0.3867** | 0.2771 |
 
 **Our scorecard actually beats all three of LendingClub's own risk measures** on this population, including `int_rate` — LC's finest-grained, continuous pricing signal, which presumably bakes in whatever non-bureau data and manual-underwriting judgment they had access to. This is a strong result for a model built entirely from public application/bureau data: the systematic feature sweep above (particularly the bankcard-detail and account-recency fields) recovered signal that's at least as good as LendingClub's own proprietary assessment, on this out-of-time slice. (Caveat: this is one test window — 2016 vintage only — not a claim that this holds across all periods or economic conditions.)
+
+## Challenger model: explainable LightGBM (`notebooks/challenger_lightgbm.ipynb`)
+
+The standard next question for any production scorecard: does a gradient-boosted model earn its extra complexity, and can it be made explainable enough to deploy? The challenger uses the **same 22 features and the same out-of-time design**, with hyperparameters tuned on a 2015 validation year only (2016+ untouched until final evaluation).
+
+**Monotonic constraints.** Every numeric feature is constrained to move risk in the direction credit logic says it should (e.g. higher DTI can never lower predicted risk). All 20 constraints were set from domain logic and then verified against the training data. The champion scorecard itself fails this test on three features (`loan_amnt`, `percent_bc_gt_75` and `mo_sin_rcnt_rev_tl_op` get reversed coefficient signs from correlated inputs); the monotonic challenger cannot, by construction.
+
+**Result: the challenger wins in every walk-forward year, and the gap widens over time.**
+
+| Test year | Champion Gini | Monotonic LightGBM Gini | Uplift | Profit uplift at 50% approval |
+|---|---|---|---|---|
+| 2016 | 0.3867 | **0.4064** | +0.020 | **+$4.7M** |
+| 2017 | 0.3694 | **0.3997** | +0.030 | **+$9.3M** |
+| 2018 | 0.3572 | **0.4084** | +0.051 | **+$4.7M** |
+
+- **vs. LendingClub's own pricing:** on 2016 the challenger's lead over LC's `int_rate` grows from +0.004 Gini (champion) to **+0.024**.
+- **Swap set (2016, 50% approval):** only 4.6% of applicants change decision. The applicants the challenger swaps in default at **19.1%** and made +$3.0M; those it swaps out default at **23.7%** and lost $1.7M.
+- **Cost of explainability:** monotonic constraints cost 0.008–0.016 Gini vs. an unconstrained LightGBM, which is a small price for guaranteed, defensible feature behaviour.
+- **SHAP + reason codes:** TreeSHAP contributions sum exactly to the model's log-odds; each declined applicant gets three plain-language adverse-action reasons (e.g. "Loan amount is high relative to income").
+- **Monitoring, and what PSI misses:** score PSI stays below 0.02 every year, a fully "stable" population, yet the default rate jumped from 18.4% to 23.3%. PSI tracks *who applies*, not *how they perform*, so outcome-based monitoring (early delinquency, predicted vs. actual PD) has to sit alongside it. `loan_to_income` PSI is trending up (0.014 → 0.088) and is the first input heading for the 0.10 watch threshold.
 
 ## Business applications (see `notebooks/scorecard.ipynb`, sections 8–10)
 
